@@ -4,6 +4,7 @@ import logging
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
+from bot.config import DEFAULT_LANGUAGE
 from . import config
 from . import localization as loc
 from .core_api_client import api_client  # Import the global api_client instance
@@ -14,7 +15,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-CURRENT_LANG = "fa"  # Or "en", or get from user preferences / context.user_data
+CURRENT_LANG = DEFAULT_LANGUAGE  # Or "en", or get from user preferences / context.user_data
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
