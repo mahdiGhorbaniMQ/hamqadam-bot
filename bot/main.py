@@ -15,7 +15,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-CURRENT_LANG = DEFAULT_LANGUAGE  # Or "en", or get from user preferences / context.user_data
+CURRENT_LANG = 'fa'  # Or "en", or get from user preferences / context.user_data
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
