@@ -4,8 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="d5503f71-783e-4713-a6c2-6fde1d797658" name="Changes" comment="init project">
-      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
+    <list default="true" id="d5503f71-783e-4713-a6c2-6fde1d797658" name="Changes" comment="update project">
       <change beforePath="$PROJECT_DIR$/bot/config.py" beforeDir="false" afterPath="$PROJECT_DIR$/bot/config.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -114,11 +113,20 @@
       <option name="project" value="LOCAL" />
       <updated>1748887519143</updated>
     </task>
-    <option name="localTasksCounter" value="6" />
+    <task id="LOCAL-00006" summary="update project">
+      <option name="closed" value="true" />
+      <created>1748887900726</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1748887900726</updated>
+    </task>
+    <option name="localTasksCounter" value="7" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="init project" />
-    <option name="LAST_COMMIT_MESSAGE" value="init project" />
+    <MESSAGE value="update project" />
+    <option name="LAST_COMMIT_MESSAGE" value="update project" />
   </component>
 </project>
