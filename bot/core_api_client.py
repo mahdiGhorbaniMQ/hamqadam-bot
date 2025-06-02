@@ -6,7 +6,7 @@ from typing import Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
 
-CORE_API_BASE_URL = "http://localhost:8080/api/v1"
+CORE_API_BASE_URL = "http://hamqadam-core:8080/api/v1"
 
 class CoreAPIClient:
     # Removed self.auth_token from here to make client more stateless per user.
