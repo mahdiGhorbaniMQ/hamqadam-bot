@@ -6,7 +6,7 @@ from typing import Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
 
-CORE_API_BASE_URL = "http://localhost:8080/api/v1" # Ensure this is correct
+CORE_API_BASE_URL = "http://hamqadam-core:8080/api/v1" # Ensure this is correct
 
 async def log_request_details(request: httpx.Request): # Made async
     logger.info(f"Outgoing HTTPX Request:")
