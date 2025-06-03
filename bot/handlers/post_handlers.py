@@ -173,67 +173,95 @@ async def cancel_post_creation(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def my_drafts_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Displays a list of the user's draft posts."""
+    """Displays a list of the user's draft posts with action buttons."""
     auth_token = context.user_data.get('auth_token')
+    user_lang = context.user_data.get('lang', CURRENT_LANG)  # Get user's preferred language if stored
+
     if not auth_token:
-        await update.message.reply_text(loc.get_string("not_logged_in", lang=CURRENT_LANG))
+        await update.message.reply_text(loc.get_string("not_logged_in", lang=user_lang))
         return
 
     await update.message.reply_text(
-        loc.get_string("fetching_drafts", lang=CURRENT_LANG, default="Fetching your drafts..."))
+        loc.get_string("fetching_drafts", lang=user_lang, default="Fetching your drafts..."))
 
-    # Ensure your Core API supports filtering by status and infers author from token
-    # Adjust the filter key (e.g., "status") if your API expects something different (like "postStatus")
     drafts_response = await api_client.get_my_posts(auth_token=auth_token, filters={"status": "DRAFT"})
+    logger.info(f"RAW API Response for /mydrafts: {drafts_response}")  # Log the raw response
 
     if drafts_response and not drafts_response.get("_api_error"):
         posts_list = []
-        # Adapt based on your API's response structure for a list of items
         if isinstance(drafts_response, list):
             posts_list = drafts_response
         elif isinstance(drafts_response, dict):
             if "data" in drafts_response and isinstance(drafts_response["data"], list):
                 posts_list = drafts_response["data"]
-            elif "content" in drafts_response and isinstance(drafts_response["content"],
-                                                             list):  # Common for Spring Pageable responses
+            elif "content" in drafts_response and isinstance(drafts_response["content"], list):
                 posts_list = drafts_response["content"]
-            # Add other checks if necessary
+            else:  # If API returns the list directly but wrapped in an object with other pagination info etc.
+                # This part needs adjustment if your list is nested differently and not caught above.
+                # For now, if not 'data' or 'content', we assume it might be a direct list if no other known wrapper.
+                logger.warning(
+                    f"Drafts response is a dict but 'data' or 'content' key not found or not a list. Keys: {drafts_response.keys()}")
 
         if not posts_list:
             await update.message.reply_text(
-                loc.get_string("no_drafts_found", lang=CURRENT_LANG, default="You have no draft posts."))
+                loc.get_string("no_drafts_found", lang=user_lang, default="You have no draft posts."))
             return
 
-        message_parts = [loc.get_string("your_draft_posts_title", lang=CURRENT_LANG, default="Your Draft Posts:\n")]
-        for post in posts_list[:10]:  # Display up to 10 drafts
-            post_id = post.get("postId", "N/A")  # Expects postId from API
-            title_obj = post.get("title",
-                                 {"en": "Untitled", "fa": "بدون عنوان"})  # Expects title as I18nString or plain string
+        await update.message.reply_text(
+            loc.get_string("your_draft_posts_title", lang=user_lang, default="Your Draft Posts:"))
 
-            title_display = "Untitled"  # Default
+        for post in posts_list[:5]:  # Display up to 5 drafts to avoid message too long error
+            post_id = post.get("postId", "N/A")
+            title_obj = post.get("title", {"en": "Untitled", "fa": "بدون عنوان"})
+
+            title_display = "Untitled"
             if isinstance(title_obj, dict):
-                title_display = title_obj.get(CURRENT_LANG, title_obj.get("en", "Untitled"))
+                title_display = title_obj.get(user_lang, title_obj.get("en", "Untitled"))
             elif isinstance(title_obj, str):
                 title_display = title_obj
 
-            # Placeholder for future inline buttons for each draft
-            # reply_markup = InlineKeyboardMarkup([[
-            #     InlineKeyboardButton(loc.get_string("edit_button", lang=CURRENT_LANG, default="Edit"), callback_data=f"edit_draft_{post_id}"),
-            #     InlineKeyboardButton(loc.get_string("publish_button", lang=CURRENT_LANG, default="Publish"), callback_data=f"publish_draft_{post_id}"),
-            # ]])
-            message_parts.append(f"\n- {title_display} (ID: {post_id})")
+            post_status = post.get("status", "UNKNOWN")  # Get post status if available
 
-        await update.message.reply_text("".join(message_parts))  # Consider using reply_markup for buttons later
+            message_text = f"📝 *{title_display}*\n"
+            message_text += f"   ID: `{post_id}`\n"
+            message_text += f"   Status: `{post_status}`"
+
+            # Define callback data strings
+            # Format: action:entity_type:entity_id
+            # Example: edit:post_draft:123ab_or_publish:post_draft:123ab
+            edit_callback = f"postaction_edit_draft_{post_id}"
+            publish_callback = f"postaction_publish_draft_{post_id}"
+            delete_callback = f"postaction_delete_draft_{post_id}"
+
+            keyboard = [
+                [
+                    InlineKeyboardButton(loc.get_string("edit_button", lang=user_lang, default="Edit"),
+                                         callback_data=edit_callback),
+                    InlineKeyboardButton(loc.get_string("publish_button", lang=user_lang, default="Publish"),
+                                         callback_data=publish_callback),
+                ],
+                [
+                    InlineKeyboardButton(loc.get_string("delete_button", lang=user_lang, default="Delete"),
+                                         callback_data=delete_callback)
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            # Send each post as a separate message with its own keyboard
+            await update.message.reply_text(text=message_text, reply_markup=reply_markup, parse_mode='Markdown')
+
+        if len(posts_list) > 5:
+            await update.message.reply_text(loc.get_string("more_drafts_available", lang=user_lang,
+                                                           default="More drafts are available. Displaying first 5."))
 
     else:
         logger.error(f"Failed to fetch drafts for user {update.effective_user.id}. API Response: {drafts_response}")
         error_detail = drafts_response.get("message", "Unknown error") if isinstance(drafts_response,
                                                                                      dict) else "Failed to fetch"
         await update.message.reply_text(
-            loc.get_string("fetch_drafts_fail", lang=CURRENT_LANG,
-                           default="Could not fetch your drafts: {error}").format(error=error_detail)
+            loc.get_string("fetch_drafts_fail", lang=user_lang, default="Could not fetch your drafts: {error}").format(
+                error=error_detail)
         )
-
 
 # Fallback handlers for the conversation
 FALLBACK_HANDLERS = [
