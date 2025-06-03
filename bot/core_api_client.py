@@ -8,8 +8,7 @@ logger = logging.getLogger(__name__)
 
 CORE_API_BASE_URL = "http://localhost:8080/api/v1" # Ensure this is correct
 
-# --- Event Hook for logging request details ---
-def log_request_details(request: httpx.Request):
+async def log_request_details(request: httpx.Request): # Made async
     logger.info(f"Outgoing HTTPX Request:")
     logger.info(f"Method: {request.method}")
     logger.info(f"URL: {request.url}")
@@ -22,13 +21,13 @@ def log_request_details(request: httpx.Request):
             except UnicodeDecodeError:
                 content_to_log = "[binary content]"
         logger.info(f"Body: {content_to_log}")
-# --- End Event Hook ---
 
 class CoreAPIClient:
     async def login_or_register_telegram_user(
         self, telegram_id: int, telegram_username: Optional[str]
     ) -> Dict[str, Any]:
         endpoint = f"{CORE_API_BASE_URL}/auth/telegram"
+        # Using camelCase for payload keys as requested
         payload = {
             "telegramId": str(telegram_id),
             "telegramUsername": telegram_username,
@@ -36,23 +35,16 @@ class CoreAPIClient:
         try:
             async with httpx.AsyncClient(event_hooks={'request': [log_request_details]}) as client:
                 response = await client.post(endpoint, json=payload)
-                if response.status_code != 200 and response.status_code != 201 : # Check for non-OK status before raise_for_status
+                if response.status_code not in [200, 201]:
                     logger.warning(f"Core API (login) returned {response.status_code}. Response Body: {response.text[:500]} Headers: {response.headers}")
                 response.raise_for_status()
                 return response.json()
         except httpx.HTTPStatusError as e:
-            logger.error(
-                f"HTTP error (login): {e.response.status_code} - {e.response.text[:500]}. Request URL: {e.request.url}"
-            )
-            return { # Return a consistent error structure for the bot to handle
-                "_api_error": True, # Custom flag to indicate this structure is an API error
-                "status_code": e.response.status_code,
-                "message": f"Core API HTTP error: {e.response.status_code}",
-                "error_detail": e.response.text[:500], # Limit detail length
-            }
+            logger.error(f"HTTP error (login): {e.response.status_code} - {e.response.text[:500]}. Req: {e.request.url}")
+            return {"_api_error": True, "status_code": e.response.status_code, "message": f"Core API HTTP error: {e.response.status_code}", "error_detail": e.response.text[:500]}
         except httpx.RequestError as e:
-            logger.error(f"Request error (login): {e}. Request URL: {e.request.url if e.request else 'N/A'}")
-            return {"_api_error": True, "message": "Core API request error. Is the Core service running?", "error_detail": str(e)}
+            logger.error(f"Request error (login): {e}. Req: {e.request.url if e.request else 'N/A'}")
+            return {"_api_error": True, "message": "Core API request error. Is Core service running?", "error_detail": str(e)}
         except Exception as e:
             logger.exception("Unexpected error during API call (login):")
             return {"_api_error": True, "message": "An unexpected error occurred.", "error_detail": str(e)}
@@ -72,12 +64,10 @@ class CoreAPIClient:
                 response.raise_for_status()
                 return response.json()
         except httpx.HTTPStatusError as e:
-            logger.error(
-                f"HTTP error (get_profile): {e.response.status_code} - {e.response.text[:500]}. Request URL: {e.request.url}"
-            )
+            logger.error(f"HTTP error (get_profile): {e.response.status_code} - {e.response.text[:500]}. Req: {e.request.url}")
             return {"_api_error": True, "status_code": e.response.status_code, "message": f"Core API HTTP error: {e.response.status_code}", "error_detail": e.response.text[:500]}
         except httpx.RequestError as e:
-            logger.error(f"Request error (get_profile): {e}. Request URL: {e.request.url if e.request else 'N/A'}")
+            logger.error(f"Request error (get_profile): {e}. Req: {e.request.url if e.request else 'N/A'}")
             return {"_api_error": True, "message": "Core API request error for get_profile.", "error_detail": str(e)}
         except Exception as e:
             logger.exception("Unexpected error during get_my_profile API call:")
