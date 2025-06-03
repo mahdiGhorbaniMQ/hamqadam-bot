@@ -1,5 +1,7 @@
 # bot/handlers/post_handlers.py
 import logging
+from typing import Any, Union, Coroutine
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     CommandHandler,
@@ -95,35 +97,52 @@ async def received_post_title(update: Update, context: ContextTypes.DEFAULT_TYPE
     return POST_TYPING_CONTENT
 
 
-async def received_post_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
+async def received_post_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Union[int, str]:
     """Handles content input and creates the draft post via API."""
     content_text = update.message.text
     auth_token = context.user_data.get('auth_token')
+    user_info = context.user_data.get('user_info')  # Get user_info stored at login
+
+    if not user_info or not user_info.get('userId'):
+        logger.error(f"User info or userId not found in context for user {update.effective_user.id}")
+        await update.message.reply_text(loc.get_string("error_missing_user_info_for_post", lang=CURRENT_LANG,
+                                                       default="Your user information is missing. Please /start again."))
+        if 'new_post_data' in context.user_data:
+            del context.user_data['new_post_data']
+        return ConversationHandler.END
 
     if not content_text or len(content_text.strip()) < 10:  # Basic validation
         await update.message.reply_text(loc.get_string("post_content_too_short", lang=CURRENT_LANG,
                                                        default="Content is too short. Please provide more details:"))
         return POST_TYPING_CONTENT  # Stay in the same state
 
-    # Store content as an I18nString object for the current language
     context.user_data['new_post_data']['contentBody'] = {CURRENT_LANG: content_text.strip()}
+
+    # Prepare authorInfo - Confirm the exact structure your PostAuthorInfoDTO expects
+    # Assuming it needs authorId (which is the userId) and an authorType
+    author_info_payload = {
+        "authorId": user_info.get("userId"),
+        "authorType": "USER"  # Assuming a default type 'USER'. Adjust if your API has other types e.g. 'TEAM'
+    }
 
     post_payload = {
         "postType": context.user_data['new_post_data']['postType'],
         "title": context.user_data['new_post_data']['title'],
         "contentBody": context.user_data['new_post_data']['contentBody'],
-        # Add other fields your Core API expects for post creation, e.g.,
-        # "tags": [{CURRENT_LANG: "exampleTag"}],
-        # "visibility": "PUBLIC",
+        "contentBodyType": "TEXT",  # Assuming "TEXT" as a default. Confirm your API's expected enum/string value.
+        "authorInfo": author_info_payload,
+        # Add other necessary fields as per your Core API for post creation
+        # e.g., "tags": [{CURRENT_LANG: "tag1"}], "visibility": "PUBLIC"
     }
 
+    logger.info(f"Attempting to create post with payload: {post_payload}")  # Log the payload
     await update.message.reply_text(loc.get_string("creating_post_draft_wait", lang=CURRENT_LANG,
                                                    default="Creating your draft post, please wait..."))
 
     api_response = await api_client.create_post_draft(auth_token=auth_token, post_data=post_payload)
 
-    if api_response and not api_response.get("_api_error") and api_response.get(
-            "postId"):  # API should return an identifier for the post
+    # ... (rest of the function remains the same) ...
+    if api_response and not api_response.get("_api_error") and api_response.get("postId"):
         post_id = api_response.get("postId")
         logger.info(f"Draft post created successfully by user {update.effective_user.id}. Post ID from API: {post_id}")
         await update.message.reply_text(
@@ -141,11 +160,10 @@ async def received_post_content(update: Update, context: ContextTypes.DEFAULT_TY
         )
 
     if 'new_post_data' in context.user_data:
-        del context.user_data['new_post_data']  # Clean up temporary data
+        del context.user_data['new_post_data']
     return ConversationHandler.END
 
-
-async def cancel_post_creation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
+async def cancel_post_creation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancels and ends the post creation conversation."""
     if 'new_post_data' in context.user_data:
         del context.user_data['new_post_data']
