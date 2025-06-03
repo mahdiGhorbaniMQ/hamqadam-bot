@@ -1,169 +1,86 @@
 # bot/core_api_client.py
 
 import logging
-import httpx # Import httpx
+import httpx
 from typing import Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
 
-CORE_API_BASE_URL = "http://hamqadam-core:8080/api/v1"
+CORE_API_BASE_URL = "http://localhost:8080/api/v1" # Ensure this is correct
+
+# --- Event Hook for logging request details ---
+def log_request_details(request: httpx.Request):
+    logger.info(f"Outgoing HTTPX Request:")
+    logger.info(f"Method: {request.method}")
+    logger.info(f"URL: {request.url}")
+    logger.info(f"Headers: {request.headers}")
+    if request.content:
+        content_to_log = request.content
+        if isinstance(content_to_log, bytes):
+            try:
+                content_to_log = content_to_log.decode('utf-8', errors='replace')
+            except UnicodeDecodeError:
+                content_to_log = "[binary content]"
+        logger.info(f"Body: {content_to_log}")
+# --- End Event Hook ---
 
 class CoreAPIClient:
-    # Removed self.auth_token from here to make client more stateless per user.
-    # Token will be managed in context.user_data by handlers.
-
     async def login_or_register_telegram_user(
         self, telegram_id: int, telegram_username: Optional[str]
     ) -> Dict[str, Any]:
-        """
-        Actual call to: POST /api/v1/auth/telegram
-        Logs in or registers a user via Telegram details.
-        """
         endpoint = f"{CORE_API_BASE_URL}/auth/telegram"
         payload = {
-            "telegramId": str(telegram_id), # As per User entity: telegram_id (String)
-            "telegramUsername": telegram_username,
-            # Add other fields if your Core API expects them for registration,
-            # e.g., "registration_method": "telegram" might be set by the backend.
+            "telegram_id": str(telegram_id),
+            "telegram_username": telegram_username,
         }
-        logger.info(
-            f"Calling Core API: POST {endpoint} with payload: {payload}"
-        )
-
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(event_hooks={'request': [log_request_details]}) as client:
                 response = await client.post(endpoint, json=payload)
-                response.raise_for_status() # Raise an exception for HTTP error codes 4xx/5xx
-                api_response_data = response.json()
-                logger.info(f"Core API success response: {api_response_data}")
-                return api_response_data # This should contain token and user data
+                if response.status_code != 200 and response.status_code != 201 : # Check for non-OK status before raise_for_status
+                    logger.warning(f"Core API (login) returned {response.status_code}. Response Body: {response.text[:500]} Headers: {response.headers}")
+                response.raise_for_status()
+                return response.json()
         except httpx.HTTPStatusError as e:
             logger.error(
-                f"HTTP error occurred while calling Core API: {e.response.status_code} - {e.response.text}"
+                f"HTTP error (login): {e.response.status_code} - {e.response.text[:500]}. Request URL: {e.request.url}"
             )
-            return {
-                "status": "error",
+            return { # Return a consistent error structure for the bot to handle
+                "_api_error": True, # Custom flag to indicate this structure is an API error
+                "status_code": e.response.status_code,
                 "message": f"Core API HTTP error: {e.response.status_code}",
-                "error_detail": e.response.text,
-                "data": None,
+                "error_detail": e.response.text[:500], # Limit detail length
             }
         except httpx.RequestError as e:
-            logger.error(f"Request error occurred while calling Core API: {e}")
-            return {
-                "status": "error",
-                "message": "Core API request error. Is the Core service running?",
-                "error_detail": str(e),
-                "data": None,
-            }
+            logger.error(f"Request error (login): {e}. Request URL: {e.request.url if e.request else 'N/A'}")
+            return {"_api_error": True, "message": "Core API request error. Is the Core service running?", "error_detail": str(e)}
         except Exception as e:
-            logger.exception("An unexpected error occurred during API call:")
-            return {
-                "status": "error",
-                "message": "An unexpected error occurred.",
-                "error_detail": str(e),
-                "data": None,
-            }
-
-        # --- Dummy Response (kept for reference or fallback if needed) ---
-        # logger.info(
-        #     f"STUB: Simulating login/register for Telegram user: telegram_id={telegram_id}, username={telegram_username}"
-        # )
-        # if telegram_id == 12345: # Simulate a known user
-        #     dummy_response = {
-        #         "status": "success",
-        #         "message": "User logged in successfully.",
-        #         "data": {
-        #             "token": "dummy_jwt_token_for_12345",
-        #             "user": {
-        #                 "user_id": "user_uuid_123",
-        #                 "telegram_id": str(telegram_id),
-        #                 "telegram_username": telegram_username or "testuser",
-        #                 "full_name": {"en": "Test User", "fa": "کاربر تستی"},
-        #                 "account_status": "active"
-        #             }
-        #         }
-        #     }
-        #     return dummy_response
-        # else: # Simulate a new user registration
-        #     dummy_response = {
-        #         "status": "success",
-        #         "message": "User registered and logged in successfully.",
-        #         "data": {
-        #             "token": f"dummy_jwt_token_for_{telegram_id}",
-        #             "user": {
-        #                 "user_id": f"user_uuid_{telegram_id}",
-        #                 "telegram_id": str(telegram_id),
-        #                 "telegram_username": telegram_username,
-        #                 "full_name": {"en": f"New User {telegram_id}", "fa": f"کاربر جدید {telegram_id}"},
-        #                 "account_status": "pending_verification"
-        #             }
-        #         }
-        #     }
-        #     return dummy_response
-        # --- End Dummy Response ---
+            logger.exception("Unexpected error during API call (login):")
+            return {"_api_error": True, "message": "An unexpected error occurred.", "error_detail": str(e)}
 
     async def get_my_profile(self, auth_token: str) -> Dict[str, Any]:
-        """
-        Actual call for: GET /api/v1/users/me
-        Fetches the current user's profile using their auth token.
-        """
         endpoint = f"{CORE_API_BASE_URL}/users/me"
-        logger.info(f"Calling Core API: GET {endpoint}")
-
         if not auth_token:
-            logger.warning("No auth token provided for get_my_profile.")
-            return {"status": "error", "message": "Authentication token required.", "data": None}
+            logger.warning("No auth token for get_my_profile.")
+            return {"_api_error": True, "message": "Authentication token required."}
 
         headers = {"Authorization": f"Bearer {auth_token}"}
-
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(event_hooks={'request': [log_request_details]}) as client:
                 response = await client.get(endpoint, headers=headers)
+                if response.status_code != 200:
+                     logger.warning(f"Core API (get_profile) returned {response.status_code}. Response Body: {response.text[:500]}. Headers: {response.headers}")
                 response.raise_for_status()
-                api_response_data = response.json()
-                logger.info(f"Core API success response for get_my_profile: {api_response_data}")
-                return api_response_data
+                return response.json()
         except httpx.HTTPStatusError as e:
             logger.error(
-                f"HTTP error occurred while calling get_my_profile: {e.response.status_code} - {e.response.text}"
+                f"HTTP error (get_profile): {e.response.status_code} - {e.response.text[:500]}. Request URL: {e.request.url}"
             )
-            return {
-                "status": "error",
-                "message": f"Core API HTTP error: {e.response.status_code}",
-                "error_detail": e.response.text,
-                "data": None,
-            }
+            return {"_api_error": True, "status_code": e.response.status_code, "message": f"Core API HTTP error: {e.response.status_code}", "error_detail": e.response.text[:500]}
         except httpx.RequestError as e:
-            logger.error(f"Request error occurred while calling get_my_profile: {e}")
-            return {
-                "status": "error",
-                "message": "Core API request error for get_my_profile.",
-                "error_detail": str(e),
-                "data": None,
-            }
+            logger.error(f"Request error (get_profile): {e}. Request URL: {e.request.url if e.request else 'N/A'}")
+            return {"_api_error": True, "message": "Core API request error for get_profile.", "error_detail": str(e)}
         except Exception as e:
-            logger.exception("An unexpected error occurred during get_my_profile API call:")
-            return {
-                "status": "error",
-                "message": "An unexpected error occurred.",
-                "error_detail": str(e),
-                "data": None,
-            }
+            logger.exception("Unexpected error during get_my_profile API call:")
+            return {"_api_error": True, "message": "An unexpected error occurred.", "error_detail": str(e)}
 
-        # --- Dummy Response (kept for reference) ---
-        # user_id_from_token = auth_token.split("_for_")[-1] if auth_token and "_for_" in auth_token else "unknown_stub_user"
-        # is_known_user = user_id_from_token == "12345"
-        # return {
-        #     "status": "success",
-        #     "message": "Profile fetched successfully.",
-        #     "data": {
-        #         "user_id": "user_uuid_123" if is_known_user else f"user_uuid_{user_id_from_token}",
-        #         "telegram_id": user_id_from_token,
-        #         # ... other fields
-        #     }
-        # }
-        # --- End Dummy Response ---
-
-# Global instance for easy access.
-# For more complex scenarios, dependency injection or context-managed instances might be better.
 api_client = CoreAPIClient()
