@@ -2,13 +2,16 @@
 
 import logging
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, \
+    ContextTypes  # Removed MessageHandler, filters if not used directly here
 # For persistence (optional, but recommended for production)
 # from telegram.ext import PicklePersistence
 
 from . import config
 from . import localization as loc
 from .core_api_client import api_client
+# Import the list of handlers from post_handlers.py
+from .handlers.post_handlers import handlers_to_add as post_handlers_list
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
@@ -26,30 +29,28 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     logger.info(f"User {telegram_id} (@{telegram_username}) started the bot.")
 
     api_login_response = await api_client.login_or_register_telegram_user(
-        telegram_id=telegram_id,  # These are bot's internal variables
-        telegram_username=telegram_username  # core_api_client sends them as camelCase
+        telegram_id=telegram_id,
+        telegram_username=telegram_username
     )
     logger.info(f"RAW API Login Response: {api_login_response}")
 
     if isinstance(api_login_response, dict) and not api_login_response.get("_api_error"):
-        # Assuming API returns camelCase keys as per your example and request
         token = api_login_response.get("accessToken")
-        user_data_from_api = api_login_response.get("user")  # This is the 'user' object
+        user_data_from_api = api_login_response.get("user")
 
         logger.debug(f"Extracted token (first 15 chars): {str(token)[:15]}...")
         logger.debug(f"Extracted user_data_from_api: {user_data_from_api}")
 
-        # Ensure critical data is present
         if token and user_data_from_api and isinstance(user_data_from_api, dict) and user_data_from_api.get("userId"):
             context.user_data['auth_token'] = token
-            context.user_data['user_info'] = user_data_from_api  # Store the 'user' object from login
+            context.user_data['user_info'] = user_data_from_api
 
-            user_name_display = user.mention_html()  # Default
-            full_name_value = user_data_from_api.get("fullName")  # Expects camelCase 'fullName'
+            user_name_display = user.mention_html()
+            full_name_value = user_data_from_api.get("fullName")
 
             if isinstance(full_name_value, str) and full_name_value.strip():
                 user_name_display = full_name_value
-            elif isinstance(full_name_value, dict):  # If API sends i18n for fullName
+            elif isinstance(full_name_value, dict):
                 user_name_display = full_name_value.get(CURRENT_LANG) or user.first_name
 
             logger.info(f"User {telegram_id} logged/registered. UserID: {user_data_from_api.get('userId')}")
@@ -85,16 +86,10 @@ async def me_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     logger.info(f"RAW API Profile Response (/me): {profile_api_response}")
 
     if isinstance(profile_api_response, dict) and not profile_api_response.get("_api_error"):
-        # IMPORTANT: Adjust parsing below based on the *actual structure* of your /users/me response
-        # This code assumes /users/me directly returns the user object,
-        # or a wrapper like {"user": user_object} or {"data": user_object} etc.
-
-        user_profile_data = {}  # Initialize
-        if "user" in profile_api_response and isinstance(profile_api_response["user"],
-                                                         dict):  # e.g. {..., "user": {...}}
+        user_profile_data = {}
+        if "user" in profile_api_response and isinstance(profile_api_response["user"], dict):
             user_profile_data = profile_api_response["user"]
-        elif "data" in profile_api_response and isinstance(profile_api_response["data"],
-                                                           dict):  # e.g. {..., "data": {...user_object...}}
+        elif "data" in profile_api_response and isinstance(profile_api_response["data"], dict):
             user_profile_data = profile_api_response["data"].get("user", profile_api_response["data"])
         elif "userId" in profile_api_response:  # If the response IS the user object directly
             user_profile_data = profile_api_response
@@ -103,20 +98,20 @@ async def me_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             context.user_data['full_profile'] = user_profile_data
 
             user_id = user_profile_data.get("userId", "N/A")
-            full_name = user_profile_data.get("fullName")  # Expects camelCase 'fullName'
+            full_name = user_profile_data.get("fullName")
             if isinstance(full_name, dict):
                 full_name = full_name.get(CURRENT_LANG, "N/A")
-            elif not full_name:
+            elif not full_name:  # Handles None or empty string
                 full_name = update.effective_user.full_name
 
-            telegram_username = user_profile_data.get("telegramUsername", "N/A")  # Expects camelCase
-            account_status = user_profile_data.get("accountStatus", "N/A")  # Expects camelCase
+            telegram_username = user_profile_data.get("telegramUsername", "N/A")
+            account_status = user_profile_data.get("accountStatus", "N/A")
 
             profile_text_title = loc.get_string("user_profile_info_title", lang=CURRENT_LANG)
             profile_text_details = loc.get_string(
-                "user_profile_info",  # Ensure your localization string uses camelCase keys
+                "user_profile_info",
                 lang=CURRENT_LANG,
-                userId=user_id,  # Use camelCase here for .format()
+                userId=user_id,
                 fullName=full_name,
                 telegramUsername=telegram_username,
                 accountStatus=account_status
@@ -134,14 +129,20 @@ async def me_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 
 def main() -> None:
-    # For persistence:
+    # For persistence (uncomment and configure if needed):
     # persistence = PicklePersistence(filepath="bot_persistence.pickle")
     # application = Application.builder().token(config.TELEGRAM_BOT_TOKEN).persistence(persistence).build()
+
     application = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
 
+    # Add core command handlers
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("me", me_command))
+
+    # Add handlers from post_handlers.py
+    for handler in post_handlers_list:
+        application.add_handler(handler)
 
     logger.info(loc.get_string("bot_started", lang=CURRENT_LANG))
     application.run_polling()
