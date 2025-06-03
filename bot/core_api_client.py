@@ -30,8 +30,8 @@ class CoreAPIClient:
     ) -> Dict[str, Any]:
         endpoint = f"{CORE_API_BASE_URL}/auth/telegram"
         payload = {
-            "telegram_id": str(telegram_id),
-            "telegram_username": telegram_username,
+            "telegramId": str(telegram_id),
+            "telegramUsername": telegram_username,
         }
         try:
             async with httpx.AsyncClient(event_hooks={'request': [log_request_details]}) as client:
