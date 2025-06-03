@@ -101,7 +101,7 @@ async def received_post_content(update: Update, context: ContextTypes.DEFAULT_TY
     """Handles content input and creates the draft post via API."""
     content_text = update.message.text
     auth_token = context.user_data.get('auth_token')
-    user_info = context.user_data.get('user_info')  # Get user_info stored at login
+    user_info = context.user_data.get('user_info')
 
     if not user_info or not user_info.get('userId'):
         logger.error(f"User info or userId not found in context for user {update.effective_user.id}")
@@ -111,37 +111,33 @@ async def received_post_content(update: Update, context: ContextTypes.DEFAULT_TY
             del context.user_data['new_post_data']
         return ConversationHandler.END
 
-    if not content_text or len(content_text.strip()) < 10:  # Basic validation
+    if not content_text or len(content_text.strip()) < 10:
         await update.message.reply_text(loc.get_string("post_content_too_short", lang=CURRENT_LANG,
                                                        default="Content is too short. Please provide more details:"))
-        return POST_TYPING_CONTENT  # Stay in the same state
+        return POST_TYPING_CONTENT
 
     context.user_data['new_post_data']['contentBody'] = {CURRENT_LANG: content_text.strip()}
 
-    # Prepare authorInfo - Confirm the exact structure your PostAuthorInfoDTO expects
-    # Assuming it needs authorId (which is the userId) and an authorType
     author_info_payload = {
         "authorId": user_info.get("userId"),
-        "authorType": "USER"  # Assuming a default type 'USER'. Adjust if your API has other types e.g. 'TEAM'
+        "authorType": "USER"
     }
 
     post_payload = {
         "postType": context.user_data['new_post_data']['postType'],
         "title": context.user_data['new_post_data']['title'],
         "contentBody": context.user_data['new_post_data']['contentBody'],
-        "contentBodyType": "TEXT",  # Assuming "TEXT" as a default. Confirm your API's expected enum/string value.
+        # Change "TEXT" to one of the accepted values, e.g., "MARKDOWN"
+        "contentBodyType": "MARKDOWN",  # <<< --- MODIFIED HERE
         "authorInfo": author_info_payload,
-        # Add other necessary fields as per your Core API for post creation
-        # e.g., "tags": [{CURRENT_LANG: "tag1"}], "visibility": "PUBLIC"
     }
 
-    logger.info(f"Attempting to create post with payload: {post_payload}")  # Log the payload
+    logger.info(f"Attempting to create post with payload: {post_payload}")
     await update.message.reply_text(loc.get_string("creating_post_draft_wait", lang=CURRENT_LANG,
                                                    default="Creating your draft post, please wait..."))
 
     api_response = await api_client.create_post_draft(auth_token=auth_token, post_data=post_payload)
 
-    # ... (rest of the function remains the same) ...
     if api_response and not api_response.get("_api_error") and api_response.get("postId"):
         post_id = api_response.get("postId")
         logger.info(f"Draft post created successfully by user {update.effective_user.id}. Post ID from API: {post_id}")
