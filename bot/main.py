@@ -70,6 +70,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         logger.error(f"Failed to login/register user {telegram_id}. API Response: {api_login_response}")
         await update.message.reply_text(loc.get_string("login_failed", lang=CURRENT_LANG, error_details=error_detail))
 
+    await help_command(update, context)
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(loc.get_string("help_text", lang=CURRENT_LANG))
